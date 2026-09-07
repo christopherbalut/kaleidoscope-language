@@ -15,6 +15,7 @@ add_executable(kaleidoscope
     src/lexer.cpp
     src/ast.cpp
     src/parser.cpp
+    src/codegen.cpp
 )
 
 target_include_directories(kaleidoscope PRIVATE

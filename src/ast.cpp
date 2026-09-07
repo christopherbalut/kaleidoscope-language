@@ -1,4 +1,5 @@
 #include "ast.hpp"
+#include "codegen.hpp"
 #include "parser.hpp"
 #include <map>
 #include <utility>
@@ -6,9 +7,6 @@
 using llvm::Function;
 using llvm::Value;
 
-std::unique_ptr<llvm::LLVMContext> TheContext;
-std::unique_ptr<llvm::IRBuilder<>> Builder;
-std::unique_ptr<llvm::Module> TheModule;
 std::map<std::string, Value *>
     NamedValues; // keeps track of current values that are defined in different
                  // scopes
@@ -79,6 +77,7 @@ CallExprAST::CallExprAST(const std::string &Callee,
     : Callee(Callee), Args(std::move(Args)) {}
 
 Value *CallExprAST::codegen() {
+    // lookup name in the gobal module table
     Function *CalleeF{TheModule->getFunction(Callee)};
     if (!CalleeF) { // function does not exist
         return nullptr;
@@ -131,18 +130,12 @@ FunctionAST::FunctionAST(std::unique_ptr<PrototypeAST> Proto,
     : Proto(std::move(Proto)), Body(std::move(Body)) {}
 
 llvm::Function *FunctionAST::codegen() {
-    Function *TheFunction{TheModule->getFunction(Proto->GetName())};
-
-    if (!TheFunction) {
-        TheFunction = Proto->codegen();
-    }
+    auto &P{*Proto};
+    FunctionProtos[Proto->GetName()] = std::move(Proto);
+    llvm::Function *TheFunction{getFunction(P.GetName())};
 
     if (!TheFunction) {
         return nullptr;
-    }
-
-    if (!TheFunction->empty()) {
-        return (Function *)LogErrorV("Function cannot be redefined");
     }
 
     // create a new basic block to start insertion into it
@@ -160,6 +153,9 @@ llvm::Function *FunctionAST::codegen() {
     if (Value * RetVal{Body->codegen()}) {
         Builder->CreateRet(RetVal);
         llvm::verifyFunction(*TheFunction);
+
+        // Optimize the function
+        TheFPM->run(*TheFunction, *TheFAM);
 
         return TheFunction;
     }
