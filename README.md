@@ -1,10 +1,21 @@
 # Kaleidoscope
 
-An implementation of the Kaleidoscope programming language in C++
+A small programming language implemented in C++ as a project for learning LLVM and compiler construction.
 
-## Status
+The project currently includes lexing, parsing, an abstract syntax tree, LLVM IR generation, optimization, and JIT compilation.
 
-Currently working on Chapter 1: Lexer.
+## Current Status
+
+Implemented so far:
+
+- Lexer and tokenization
+- Recursive descent parser
+- Abstract Syntax Tree (AST)
+- LLVM IR generation
+- Function definitions and extern declarations
+- Top-level expression evaluation
+- LLVM optimization passes
+- JIT compilation
 
 ## Requirements
 
@@ -29,3 +40,17 @@ cmake --build build
 ```bash
 ./build/kaleidoscope
 ```
+
+## Project Structure
+
+```text
+include/    Header files
+src/        Lexer, parser, AST, code generation, and JIT
+```
+
+## Goals
+
+- Learn the LLVM C++ API
+- Understand how a compiler frontend is structured
+- Generate and optimize LLVM IR
+- Explore JIT compilation
