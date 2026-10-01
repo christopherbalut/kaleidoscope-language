@@ -2,7 +2,7 @@
 
 A small programming language implemented in C++ as a project for learning LLVM and compiler construction.
 
-The project currently includes lexing, parsing, an abstract syntax tree, LLVM IR generation, optimization, and JIT compilation.
+The project currently includes lexing, parsing, an abstract syntax tree, LLVM IR generation, optimization, JIT compilation, and control flow.
 
 ## Current Status
 
@@ -16,6 +16,10 @@ Implemented so far:
 - Top-level expression evaluation
 - LLVM optimization passes
 - JIT compilation
+- `if/then/else` expressions
+- `for` loops
+
+Currently working on User-Defined Operators.
 
 ## Requirements
 
@@ -33,24 +37,3 @@ cmake -S . -B build -G Ninja \
     -DCMAKE_BUILD_TYPE=Debug
 
 cmake --build build
-```
-
-## Running
-
-```bash
-./build/kaleidoscope
-```
-
-## Project Structure
-
-```text
-include/    Header files
-src/        Lexer, parser, AST, code generation, and JIT
-```
-
-## Goals
-
-- Learn the LLVM C++ API
-- Understand how a compiler frontend is structured
-- Generate and optimize LLVM IR
-- Explore JIT compilation
