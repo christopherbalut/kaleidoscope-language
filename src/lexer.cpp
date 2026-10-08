@@ -1,5 +1,8 @@
 #include "lexer.hpp"
 
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <iostream>
 
 std::string IdentifierStr; // static because we want to keep it here
@@ -26,7 +29,7 @@ int gettok() {
         } else {
             ColNum++;
         }
-        LastChar = getchar();
+        LastChar = std::getchar();
     }
 
     if (LastChar != EOF &&
@@ -97,7 +100,7 @@ int gettok() {
             std::cout << "ColNum is " << ColNum << "\n";
             std::cout << "LineNum is " << LineNum << "\n";
         }
-        NumVal = std::strtod(NumStr.c_str(), 0);
+        NumVal = std::strtod(NumStr.c_str(), nullptr);
         // std::cout << "NumVal is " << NumVal << "\n";
         return tok_number;
     }

@@ -51,7 +51,7 @@ std::unique_ptr<ExprAST> ParseIdentifierExpr() {
     GetNextToken();
 
     if (CurTok != '(') {
-        return std::make_unique<VariableExprAST>(IdName);
+        return std::make_unique<VariableExprAST>(std::move(IdName));
     }
 
     GetNextToken(); // for '('
@@ -81,6 +81,85 @@ std::unique_ptr<ExprAST> ParseIdentifierExpr() {
     return std::make_unique<CallExprAST>(IdName, std::move(Args));
 }
 
+std::unique_ptr<ExprAST> ParseIfExpr() {
+    GetNextToken(); // this will eat the if string
+
+    auto Cond{ParseExpression()};
+
+    if (!Cond) {
+        return nullptr;
+    }
+
+    if (CurTok != tok_then) {
+        return LogError("expected then statement, terminating...");
+    }
+    GetNextToken();
+
+    auto Then{ParseExpression()};
+    if (!Then) {
+        return nullptr;
+    }
+
+    if (CurTok != tok_else) {
+        return LogError("expected else, terminating...");
+    }
+
+    GetNextToken();
+
+    auto Else{ParseExpression()};
+    if (!Else) {
+        return nullptr;
+    }
+    return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then),
+                                       std::move(Else));
+}
+
+std::unique_ptr<ExprAST> ParseForExpr() {
+    GetNextToken(); // eat the for.
+
+    if (CurTok != tok_identifier)
+        return LogError("expected identifier after for");
+
+    std::string IdName{IdentifierStr};
+    GetNextToken(); // eat identifier.
+
+    if (CurTok != '=')
+        return LogError("expected '=' after for");
+    GetNextToken(); // eat '='.
+
+    auto Start{ParseExpression()};
+    if (!Start)
+        return nullptr;
+    if (CurTok != ',')
+        return LogError("expected ',' after for start value");
+    GetNextToken();
+
+    auto End{ParseExpression()};
+    if (!End)
+        return nullptr;
+
+    // The step value is optional.
+    std::unique_ptr<ExprAST> Step;
+    if (CurTok == ',') {
+        GetNextToken();
+        Step = ParseExpression();
+        if (!Step)
+            return nullptr;
+    }
+
+    if (CurTok != tok_in)
+        return LogError("expected 'in' after for");
+    GetNextToken(); // eat 'in'.
+
+    auto Body{ParseExpression()};
+    if (!Body)
+        return nullptr;
+
+    return std::make_unique<ForExprAST>(IdName, std::move(Start),
+                                        std::move(End), std::move(Step),
+                                        std::move(Body));
+}
+
 std::unique_ptr<ExprAST> ParsePrimary() {
     switch (CurTok) {
     default:
@@ -92,20 +171,23 @@ std::unique_ptr<ExprAST> ParsePrimary() {
         return ParseNumberExpr();
     case '(':
         return ParseParenExpr();
+    case tok_if:
+        return ParseIfExpr();
+    case tok_for:
+        return ParseForExpr();
     }
 }
 
-int GetTokPrecedence() {
-    if (!isascii(CurTok)) {
-        return -1;
+std::optional<int> GetTokPrecedence() {
+    if (CurTok < 0 || CurTok > 127) {
+        return std::nullopt;
     }
 
-    int TokPrec = BinopPrecedence[CurTok];
-
-    if (TokPrec <= 0) {
-        return -1;
+    if (const auto it = BinopPrecedence.find(static_cast<char>(CurTok));
+        it != BinopPrecedence.end() && it->second > 0) {
+        return it->second;
     }
-    return TokPrec;
+    return std::nullopt;
 }
 
 std::unique_ptr<ExprAST> ParseExpression() {
@@ -121,22 +203,22 @@ std::unique_ptr<ExprAST> ParseExpression() {
 std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                                        std::unique_ptr<ExprAST> LHS) {
     while (true) {
-        int TokPrec{GetTokPrecedence()};
+        const auto Precedence{GetTokPrecedence()};
 
-        if (TokPrec < ExprPrec) {
+        if (!Precedence || *Precedence < ExprPrec) {
             return LHS;
         }
 
-        int BinOp{CurTok};
-        GetNextToken();
+        const int TokPrec{*Precedence};
+        const char BinOp{static_cast<char>(CurTok)};
 
         auto RHS{ParsePrimary()};
         if (!RHS) {
             return nullptr;
         }
 
-        int NextPrec{GetTokPrecedence()};
-        if (TokPrec < NextPrec) {
+        const auto NextPrec{GetTokPrecedence()};
+        if (NextPrec && TokPrec < *NextPrec) {
             RHS = ParseBinOpRHS(TokPrec + 1, std::move(RHS));
             if (!RHS) {
                 return nullptr;

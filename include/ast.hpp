@@ -11,6 +11,7 @@
 #include <llvm/Support/Casting.h>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 extern std::unique_ptr<llvm::LLVMContext>
@@ -39,8 +40,8 @@ class NumberExprAST : public ExprAST {
     double Val; // private by default since it is before public
 
   public:
-    NumberExprAST(double Val);
-    double GetValue() const; // temp for -Werror
+    explicit NumberExprAST(double Val);
+    double GetValue() const noexcept; // temp for -Werror
     llvm::Value *codegen() override;
 };
 
@@ -48,7 +49,7 @@ class VariableExprAST : public ExprAST {
     std::string Name;
 
   public:
-    VariableExprAST(const std::string &Name);
+    explicit VariableExprAST(std::string Name);
     llvm::Value *codegen() override;
 };
 
@@ -59,10 +60,10 @@ class BinaryExprAST : public ExprAST {
     // different data types sizes i.e. object slicing
 
   public:
-    BinaryExprAST(char Op, std::unique_ptr<ExprAST> RHS,
-                  std::unique_ptr<ExprAST> LHS);
+    BinaryExprAST(char Op, std::unique_ptr<ExprAST> LHS,
+                  std::unique_ptr<ExprAST> RHS);
 
-    char GetOp() const; // temp for -Werror
+    char GetOp() const noexcept; // temp for -Werror
     llvm::Value *codegen() override;
 };
 
@@ -71,7 +72,7 @@ class CallExprAST : public ExprAST {
     std::vector<std::unique_ptr<ExprAST>> Args;
 
   public:
-    CallExprAST(const std::string &Callee,
+    CallExprAST(std::string Callee,
                 std::vector<std::unique_ptr<ExprAST>>);
     llvm::Value *codegen() override;
 };
@@ -81,8 +82,7 @@ class IfExprAST : public ExprAST {
 
   public:
     IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
-              std::unique_ptr<ExprAST> Else)
-        : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
+              std::unique_ptr<ExprAST> Else);
 
     llvm::Value *codegen() override;
 };
@@ -92,10 +92,10 @@ class ForExprAST : public ExprAST {
     std::unique_ptr<ExprAST> Start, End, Step, Body;
 
   public:
-    ForExprAST(const std::string &VarName, std::unique_ptr<ExprAST> Start,
+    ForExprAST(std::string VarName, std::unique_ptr<ExprAST> Start,
                std::unique_ptr<ExprAST> End, std::unique_ptr<ExprAST> Step,
                std::unique_ptr<ExprAST> Body)
-        : VarName(VarName), Start(std::move(Start)), End(std::move(End)),
+        : VarName(std::move(VarName)), Start(std::move(Start)), End(std::move(End)),
           Step(std::move(Step)), Body(std::move(Body)) {}
 
     llvm::Value *codegen() override;
@@ -111,9 +111,9 @@ class PrototypeAST {
     std::vector<std::string> Args;
 
   public:
-    PrototypeAST(const std::string &Name, std::vector<std::string> Args);
+    PrototypeAST(std::string Name, std::vector<std::string> Args);
 
-    const std::string &GetName() const;
+    [[nodiscard]] const std::string &GetName() const noexcept;
     llvm::Function *codegen();
 };
 

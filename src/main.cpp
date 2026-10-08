@@ -1,18 +1,15 @@
 #include "ast.hpp"
+#include "codegen.hpp"
 #include "lexer.hpp"
 #include "parser.hpp"
 
+#include <cstdio>
+#include <llvm/Support/Error.h>
+#include <memory>
+
 using namespace llvm;
 
-static void InitializeModule() {
-    // Open a new context and module.
-    TheContext = std::make_unique<LLVMContext>();
-    TheModule = std::make_unique<Module>("Kaleidoscope JIT", *TheContext);
-    TheModule->setDataLayout(TheJIT->setDataLayout);
-
-    // Create a new builder for the module.
-    Builder = std::make_unique<IRBuilder<>>(*TheContext);
-}
+static ExitOnError ExitOnErr;
 
 static void HandleDefinition() {
     if (auto FnAST = ParseDefinition()) {
@@ -43,20 +40,29 @@ static void HandleExtern() {
 static void HandleTopLevelExpression() {
     // Evaluate a top-level expression into an anonymous function.
     if (auto FnAST = ParseTopLevelExpr()) {
-        if (auto *FnIR = FnAST->codegen()) {
-            fprintf(stderr, "Read top-level expression:");
-            FnIR->print(errs());
-            fprintf(stderr, "\n");
+        if (FnAST->codegen()) {
+            auto RT = TheJIT->getMainJITDylib().createResourceTracker();
 
-            // Remove the anonymous expression.
-            FnIR->eraseFromParent();
+            auto TSM = llvm::orc::ThreadSafeModule(std::move(TheModule),
+                                                   std::move(TheContext));
+
+            ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
+
+            InitializeModuleAndManagers();
+
+            auto ExprSymbol = ExitOnErr(TheJIT->lookup("__anon_expr"));
+
+            double (*FP)() = ExprSymbol.toPtr<double (*)()>();
+
+            fprintf(stderr, "Evaluated to %f\n", FP());
+
+            ExitOnErr(RT->remove());
         }
     } else {
         // Skip token for error recovery.
         GetNextToken();
     }
-}
-
+} // <-- HandleTopLevelExpression ends HERE
 /// top ::= definition | external | expression | ';'
 static void MainLoop() {
     while (true) {
@@ -82,6 +88,10 @@ static void MainLoop() {
 
 int main() {
 
+    LLVMInitializeNativeTarget();
+    LLVMInitializeNativeAsmPrinter();
+    LLVMInitializeNativeAsmParser();
+
     // Install standard BinopPrecedence
     BinopPrecedence['<'] = 10;
     BinopPrecedence['+'] = 20;
@@ -92,7 +102,9 @@ int main() {
     fprintf(stderr, "ready> ");
     GetNextToken();
 
-    InitializeModule();
+    TheJIT = ExitOnErr(orc::KaleidoscopeJIT::Create());
+
+    InitializeModuleAndManagers();
 
     // Run the main "interpreter loop" now.
     MainLoop();

@@ -6,7 +6,6 @@
 #include <memory>
 #include <utility>
 
-using llvm::Builder;
 using llvm::Function;
 using llvm::Value;
 
@@ -25,16 +24,14 @@ Value *NumberExprAST::codegen() {
     return fpconst;
 }
 
-VariableExprAST::VariableExprAST(const std::string &Name) : Name(Name) {}
+VariableExprAST::VariableExprAST(std::string Name) : Name(std::move(Name)) {}
 
 Value *VariableExprAST::codegen() {
-    Value *V{NamedValues[Name]};
-
-    if (!V) {
-        return LogErrorV("Unkown variable name");
+    if (const auto it = NamedValues.find(Name);
+        it != NamedValues.end() && it->second != nullptr) {
+        return it->second;
     }
-
-    return V;
+    return LogErrorV("Unkown variable name");
 }
 
 BinaryExprAST::BinaryExprAST(char Op, std::unique_ptr<ExprAST> LHS,
@@ -91,8 +88,14 @@ Value *CallExprAST::codegen() {
     }
 
     std::vector<Value *> ArgsV;
-    for (unsigned i{}; i < Args.size(); i++) {
-        ArgsV.emplace_back(Args[i]->codegen());
+    for (const auto &Arg : Args) {
+        auto *ArgValue = Arg->codegen();
+
+        if (!ArgValue) {
+            return nullptr;
+        }
+
+        ArgsV.emplace_back(ArgValue);
     }
 
     if (!ArgsV.back()) { // if most recent arg failed to codegen
@@ -167,8 +170,9 @@ Value *ForExprAST::codegen() {
     // Make the new basic block for the loop header, inserting after current
     // block.
     Function *TheFunction{Builder->GetInsertBlock()->getParent()};
-    BasicBlock *PreheaderBB{Builder->GetInsertBlock()};
-    BasicBlock *LoopBB{BasicBlock::Create(*TheContext, "loop", TheFunction)};
+    llvm::BasicBlock *PreheaderBB{Builder->GetInsertBlock()};
+    llvm::BasicBlock *LoopBB{
+        llvm::BasicBlock::Create(*TheContext, "loop", TheFunction)};
 
     // Insert an explicit fall through from the current block to the LoopBB.
     Builder->CreateBr(LoopBB);
@@ -177,8 +181,8 @@ Value *ForExprAST::codegen() {
     Builder->SetInsertPoint(LoopBB);
 
     // Start the PHI node with an entry for Start.
-    PHINode *Variable{
-        Builder->CreatePHI(Type::getDoubleTy(*TheContext), 2, VarName)};
+    llvm::PHINode *Variable{
+        Builder->CreatePHI(llvm::Type::getDoubleTy(*TheContext), 2, VarName)};
     Variable->addIncoming(StartVal, PreheaderBB);
 
     // Within the loop, the variable is defined equal to the PHI node. If it
@@ -200,7 +204,7 @@ Value *ForExprAST::codegen() {
             return nullptr;
     } else {
         // If not specified, use 1.0.
-        StepVal = ConstantFP::get(*TheContext, APFloat(1.0));
+        StepVal = llvm::ConstantFP::get(*TheContext, llvm::APFloat(1.0));
     }
 
     Value *NextVar{Builder->CreateFAdd(Variable, StepVal, "nextvar")};
@@ -212,12 +216,13 @@ Value *ForExprAST::codegen() {
 
     // Convert condition to a bool by comparing non-equal to 0.0.
     EndCond = Builder->CreateFCmpONE(
-        EndCond, ConstantFP::get(*TheContext, APFloat(0.0)), "loopcond");
+        EndCond, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)),
+        "loopcond");
 
     // Create the "after loop" block and insert it.
-    BasicBlock *LoopEndBB{Builder->GetInsertBlock()};
-    BasicBlock *AfterBB{
-        BasicBlock::Create(*TheContext, "afterloop", TheFunction)};
+    llvm::BasicBlock *LoopEndBB{Builder->GetInsertBlock()};
+    llvm::BasicBlock *AfterBB{
+        llvm::BasicBlock::Create(*TheContext, "afterloop", TheFunction)};
 
     // Insert the conditional branch into the end of LoopEndBB.
     Builder->CreateCondBr(EndCond, LoopBB, AfterBB);
@@ -235,7 +240,7 @@ Value *ForExprAST::codegen() {
         NamedValues.erase(VarName);
 
     // for expr always returns 0.0.
-    return Constant::getNullValue(Type::getDoubleTy(*TheContext));
+    return llvm::Constant::getNullValue(llvm::Type::getDoubleTy(*TheContext));
 }
 
 PrototypeAST::PrototypeAST(const std::string &Name,

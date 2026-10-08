@@ -12,6 +12,8 @@
 #include "llvm/Passes/StandardInstrumentations.h"
 
 #include <memory>
+#include <map>
+#include <string>
 
 class PrototypeAST;
 
