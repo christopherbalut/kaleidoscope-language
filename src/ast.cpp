@@ -1,6 +1,7 @@
 #include "ast.hpp"
 #include "codegen.hpp"
 #include "parser.hpp"
+#include <cassert>
 #include <llvm/IR/Instructions.h>
 #include <map>
 #include <memory>
@@ -14,7 +15,9 @@ std::map<std::string, Value *>
                  // scopes
 NumberExprAST::NumberExprAST(double Val) : Val(Val) {}
 
-double NumberExprAST::GetValue() const { return Val; } // temp for -Werror
+double NumberExprAST::GetValue() const noexcept {
+    return Val;
+} // temp for -Werror
 
 Value *NumberExprAST::codegen() {
     Value *fpconst{llvm::ConstantFP::get(*TheContext, llvm::APFloat(Val))};
@@ -34,12 +37,27 @@ Value *VariableExprAST::codegen() {
     return LogErrorV("Unkown variable name");
 }
 
+UnaryExprAST::UnaryExprAST(char Opcode, std::unique_ptr<ExprAST> Operand)
+    : Opcode(Opcode), Operand(std::move(Operand)) {}
+
+Value *UnaryExprAST::codegen() {
+    Value *OperandV{Operand->codegen()};
+    if (!OperandV)
+        return nullptr;
+
+    Function *F{getFunction(std::string("unary") + Opcode)};
+    if (!F)
+        return LogErrorV("Unknown unary operator");
+
+    return Builder->CreateCall(F, OperandV, "unop");
+}
+
 BinaryExprAST::BinaryExprAST(char Op, std::unique_ptr<ExprAST> LHS,
                              std::unique_ptr<ExprAST> RHS)
     : Op(Op), RHS(std::move(RHS)), LHS(std::move(LHS)) {}
 // std::move since unique_ptr's cannot be copied
 
-char BinaryExprAST::GetOp() const { return Op; } // temp for -Werror
+char BinaryExprAST::GetOp() const noexcept { return Op; } // temp for -Werror
 
 // case of 1 + 2
 // we recurse on the left, so we call
@@ -64,17 +82,22 @@ Value *BinaryExprAST::codegen() {
     case '<':
         // floating point comparison creates i32
         L = Builder->CreateFCmpULT(L, R, "cmptmp");
-        return Builder->CreateUIToFP(L, llvm::Type::getDoubleTy(*TheContext));
-        break;
+        return Builder->CreateUIToFP(L, llvm::Type::getDoubleTy(*TheContext),
+                                     "booltmp");
     default:
-        // i probably have to log the error somewhere
-        return LogErrorV("invalid binary operator");
+        // i probably have to log the error eomewhere
+        break;
     }
+    // if it was not a builtin, we use a userdefined one
+    Function *F{getFunction(std::string("binary") + Op)};
+    assert(F && "binary operator not found!");
+    Value *Ops[2] = {L, R};
+    return Builder->CreateCall(F, Ops, "binop");
 }
 
-CallExprAST::CallExprAST(const std::string &Callee,
+CallExprAST::CallExprAST(std::string Callee,
                          std::vector<std::unique_ptr<ExprAST>> Args)
-    : Callee(Callee), Args(std::move(Args)) {}
+    : Callee(std::move(Callee)), Args(std::move(Args)) {}
 
 Value *CallExprAST::codegen() {
     // lookup name in the gobal module table
@@ -122,8 +145,8 @@ Value *IfExprAST::codegen() {
         "ifcondition");
 
     Function *TheFunction = Builder->GetInsertBlock()->getParent();
-    // Create blocks for the then and else case, Isnert the 'then' block at teh
-    // end of the function
+    // Create blocks for the then and else case, Isnert the 'then' block at
+    // teh end of the function
     llvm::BasicBlock *ThenBB{
         llvm::BasicBlock::Create(*TheContext, "then", TheFunction)};
     llvm::BasicBlock *ElseBB{llvm::BasicBlock::Create(*TheContext, "else")};
@@ -191,8 +214,8 @@ Value *ForExprAST::codegen() {
     NamedValues[VarName] = Variable;
 
     // Emit the body of the loop. This, like any other expr, can change the
-    // current BB. Note that we ignore the value computed by the body, but don't
-    // allow an error.
+    // current BB. Note that we ignore the value computed by the body, but
+    // don't allow an error.
     if (!Body->codegen())
         return nullptr;
 
@@ -243,11 +266,27 @@ Value *ForExprAST::codegen() {
     return llvm::Constant::getNullValue(llvm::Type::getDoubleTy(*TheContext));
 }
 
-PrototypeAST::PrototypeAST(const std::string &Name,
-                           std::vector<std::string> Args)
-    : Name(Name), Args(std::move(Args)) {}
+PrototypeAST::PrototypeAST(std::string Name, std::vector<std::string> Args,
+                           bool IsOperator, unsigned Prec)
+    : Name(std::move(Name)), Args(std::move(Args)), IsOperator(IsOperator),
+      Precedence(Prec) {}
 
-const std::string &PrototypeAST::GetName() const { return Name; }
+const std::string &PrototypeAST::GetName() const noexcept { return Name; }
+
+bool PrototypeAST::isUnaryOp() const noexcept {
+    return IsOperator && Args.size() == 1;
+}
+bool PrototypeAST::isBinaryOp() const noexcept {
+    return IsOperator && Args.size() == 2;
+}
+
+char PrototypeAST::getOperatorName() const noexcept {
+    assert(isUnaryOp() || isBinaryOp());
+    return Name[Name.size() - 1];
+}
+unsigned PrototypeAST::getBinaryPrecedence() const noexcept {
+    return Precedence;
+}
 
 llvm::Function *PrototypeAST::codegen() {
     std::vector<llvm::Type *> Doubles(
@@ -280,6 +319,11 @@ llvm::Function *FunctionAST::codegen() {
 
     if (!TheFunction) {
         return nullptr;
+    }
+
+    // if this is an opertor, install it
+    if (P.isBinaryOp()) {
+        BinopPrecedence[P.getOperatorName()] = P.getBinaryPrecedence();
     }
 
     // create a new basic block to start insertion into it

@@ -53,6 +53,15 @@ class VariableExprAST : public ExprAST {
     llvm::Value *codegen() override;
 };
 
+class UnaryExprAST : public ExprAST {
+    char Opcode;
+    std::unique_ptr<ExprAST> Operand;
+
+  public:
+    UnaryExprAST(char Opcode, std::unique_ptr<ExprAST> Operand);
+    llvm::Value *codegen() override;
+};
+
 class BinaryExprAST : public ExprAST {
     char Op;
     std::unique_ptr<ExprAST> RHS, LHS;
@@ -72,8 +81,7 @@ class CallExprAST : public ExprAST {
     std::vector<std::unique_ptr<ExprAST>> Args;
 
   public:
-    CallExprAST(std::string Callee,
-                std::vector<std::unique_ptr<ExprAST>>);
+    CallExprAST(std::string Callee, std::vector<std::unique_ptr<ExprAST>>);
     llvm::Value *codegen() override;
 };
 
@@ -95,8 +103,8 @@ class ForExprAST : public ExprAST {
     ForExprAST(std::string VarName, std::unique_ptr<ExprAST> Start,
                std::unique_ptr<ExprAST> End, std::unique_ptr<ExprAST> Step,
                std::unique_ptr<ExprAST> Body)
-        : VarName(std::move(VarName)), Start(std::move(Start)), End(std::move(End)),
-          Step(std::move(Step)), Body(std::move(Body)) {}
+        : VarName(std::move(VarName)), Start(std::move(Start)),
+          End(std::move(End)), Step(std::move(Step)), Body(std::move(Body)) {}
 
     llvm::Value *codegen() override;
 };
@@ -109,11 +117,18 @@ class ForExprAST : public ExprAST {
 class PrototypeAST {
     std::string Name;
     std::vector<std::string> Args;
+    bool IsOperator;
+    unsigned Precedence;
 
   public:
-    PrototypeAST(std::string Name, std::vector<std::string> Args);
+    PrototypeAST(std::string Name, std::vector<std::string> Args,
+                 bool IsOperator = false, unsigned Prec = 0);
 
     [[nodiscard]] const std::string &GetName() const noexcept;
+    [[nodiscard]] bool isUnaryOp() const noexcept;
+    [[nodiscard]] bool isBinaryOp() const noexcept;
+    [[nodiscard]] char getOperatorName() const noexcept;
+    [[nodiscard]] unsigned getBinaryPrecedence() const noexcept;
     llvm::Function *codegen();
 };
 
